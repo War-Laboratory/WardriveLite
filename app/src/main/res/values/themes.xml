@@ -1,30 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
-        <item name="android:windowBackground">@color/icon_bg</item>
-        <item name="colorAccent">#C6FF1A</item>
-    </style>
 
-    <style name="WidgetCell">
-        <item name="android:layout_width">0dp</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_weight">1</item>
-        <item name="android:orientation">vertical</item>
-    </style>
-
-    <style name="WidgetLabel">
-        <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:fontFamily">@font/chakra_bold_italic</item>
-        <item name="android:textColor">#9A8CB6</item>
-        <item name="android:textSize">10sp</item>
-    </style>
-
-    <style name="WidgetNum">
-        <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:fontFamily">@font/share_tech_mono</item>
-        <item name="android:text">0</item>
-        <item name="android:textColor">#F4EEFF</item>
-        <item name="android:textSize">22sp</item>
+    <style name="Theme.WarBLE" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#06090A</item>
+        <item name="android:statusBarColor">#06090A</item>
+        <item name="android:navigationBarColor">#06090A</item>
     </style>
 </resources>

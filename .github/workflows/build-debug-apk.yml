@@ -23,34 +23,28 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: "platforms;android-35 build-tools;35.0.0 platform-tools"
+          packages: "platforms;android-36 build-tools;36.0.0 platform-tools"
 
-      - name: Build debug APK
+      - name: Build phone + watch APKs
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew :app:assembleDebug :wear:assembleDebug --stacktrace
 
-      - name: Render screen previews
-        continue-on-error: true
-        run: |
-          ./gradlew :app:recordPaparazziDebug --stacktrace
-          cd app/src/test/snapshots/images && zip -q ../../../../../screens.zip *.png
-
-      - name: Upload APK
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
           name: WardriveLite-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            wear/build/outputs/apk/debug/wear-debug.apk
 
-      - name: Publish APK to the "debug-latest" release
+      - name: Publish to the "debug-latest" release
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk WardriveLite-debug.apk
+          cp wear/build/outputs/apk/debug/wear-debug.apk WardriveLite-watch-debug.apk
           gh release delete debug-latest --yes --cleanup-tag || true
-          FILES="WardriveLite-debug.apk"
-          [ -f screens.zip ] && FILES="$FILES screens.zip"
-          gh release create debug-latest $FILES \
-            --title "Latest debug build" --notes "Debug APK built from ${GITHUB_SHA::7}" --prerelease
+          gh release create debug-latest WardriveLite-debug.apk WardriveLite-watch-debug.apk \
+            --title "Latest debug build" --notes "Debug APKs built from ${GITHUB_SHA::7}. Source: this repository (GPL-3.0)." --prerelease

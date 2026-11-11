@@ -1,27 +1,61 @@
-# Wardrive Lite
+# Wardrive Lite — SHOK3R edition (fork of Wardrive Go)
 
-An original Android wardriving and detection app (Android 10+), inspired by the feature set of Wardrive Go.
+A passive wardriving app for Android. It maps Wi-Fi, Bluetooth, and cellular networks on a live map, and can upload discoveries to [WiGLE](https://wigle.net) and
+[WDGWars](https://wdgwars.pl).
 
-## What it does
-- Logs Wi‑Fi, Bluetooth LE and cell towers (LTE/5G NR/GSM/WCDMA) and tags them with GPS
-- Raises alerts and notifications for:
-  - Flock Safety ALPR cameras (by name; add MAC prefixes in `Detector.kt`)
-  - Axon body cams/Tasers (MAC prefix 00:25:DF) and police in-car routers
-  - Hidden/IoT camera hotspots
-  - AirTags / Find My, Samsung SmartTag and Tile trackers. A tracker is flagged **FOLLOWING YOU** if it's still with you 10+ minutes later and 500+ m from where you first saw it
-  - Flipper Zero and smart glasses (Ray-Ban/Meta)
-- Map tab (OpenStreetMap) with every located device
-- Writes a **WiGLE CSV (v1.6)** log; tap *Export CSV* to share it, then upload it at wigle.net
-- Keeps scanning in the background as a foreground service with a Stop button in the notification
+## Features
 
-## Build
-1. Install Android Studio and open this folder. Let Gradle sync.
-2. Plug in your phone with USB debugging on and press **Run**.
-   Or from a terminal: `./gradlew assembleDebug`, which writes `app/build/outputs/apk/debug/app-debug.apk`.
+- Live radar and map (dark/light) of nearby Wi-Fi, Bluetooth, and cellular networks
+- WiGLE and WDGWars upload (streamed CSV), plus CSV import/export
+- Privacy controls: exclusion zones, per-device blacklist, and `_nomap`/`_optout` honoring
+- High-gain USB (OTG) monitor-mode adapter support for long-range Wi-Fi capture
+- Channel and spectrum analyzers (2.4 / 5 / 6 GHz)
+- Android Auto map (navigation-category, renders the app's own map on the car screen)
+- Wear OS companion with a live-stats tile and complication
+- Also detects offensive devices such as Flock Cameras and Axon Body Cameras
 
-## Tips
-- Turn off **Wi‑Fi scan throttling** in Developer options. Otherwise Android only allows about 4 Wi‑Fi scans every 2 minutes.
-- Keep Bluetooth and Location turned on.
-- Detection rules are heuristics. Edit `Detector.kt` to add signatures you trust.
+## Modules
 
-The app only listens to what devices broadcast. It never connects to them or interferes with them.
+- `app/` - the phone application (`com.rocketgod.warble`)
+- `wear/` - the Wear OS companion
+
+## Building
+
+Requirements:
+
+- JDK 17
+- Android SDK (compileSdk 36)
+- Gradle 8.x (or open the project in Android Studio, which manages the Gradle wrapper for you)
+
+Build from the command line:
+
+```bash
+gradle :app:assembleDebug        # phone, debug
+gradle :wear:assembleDebug       # wear companion, debug
+```
+
+Release builds are debug-signed by default so the project builds without any secrets. To sign a
+release with your own keystore, set these environment variables before building:
+
+```
+ANDROID_KEYSTORE_PATH        # path to your .keystore
+ANDROID_KEYSTORE_PASSWORD
+ANDROID_KEY_ALIAS
+ANDROID_KEY_PASSWORD
+```
+
+## Configuration
+
+WiGLE and WDGWars API credentials are entered in the app (Settings | API keys) and stored only on
+the device. No keys are bundled with the source.
+
+## Note
+
+I first made the iOS app WarBLE Go, and ported the Bluetooth and UI portions of that app here
+so there are many lingering WarBLE references which I was afraid to find/replace and break things.
+
+Development is ongoing and this is a snapshot of build 2.0.34
+
+## License
+
+This project is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE) for details.
