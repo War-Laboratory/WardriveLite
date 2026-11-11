@@ -150,8 +150,11 @@ object UsbBeast {
 
     fun requestPermission(ctx: Context, d: UsbDevice) {
         val intent = Intent(ACTION_PERMISSION).setPackage(ctx.packageName)
-        val pi = PendingIntent.getBroadcast(ctx, 0, intent, PendingIntent.FLAG_MUTABLE)
-        runCatching { manager(ctx).requestPermission(d, pi) }
+        val flags = PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        val pi = PendingIntent.getBroadcast(ctx, 0, intent, flags)
+        try { manager(ctx).requestPermission(d, pi) } catch (e: Exception) {
+            BeastDiag.log("USB permission request failed to dispatch: ${e.message}")
+        }
     }
 
     fun label(d: UsbDevice): String = d.productName ?: d.deviceName ?: "USB adapter"

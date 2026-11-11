@@ -141,8 +141,23 @@ private fun BtPill(text: String, accent: Color, filled: Boolean = false, enabled
 @Composable
 private fun DevicePicker(devices: List<UsbDevice>, selected: UsbDevice?, accent: Color, onPick: (UsbDevice) -> Unit) {
     if (devices.isEmpty()) {
-        Text("No board plugged in.\nConnect an ESP32 to this phone with a USB-C OTG cable.",
+        Text("No ESP board recognized.\nPlug ONE bare ESP32 (e.g. a XIAO C5) straight into this phone with a USB-C OTG data cable — not into the Biscuit host.",
             color = Palette.muted, fontFamily = Mono, fontSize = 13.sp)
+        val ctx = LocalContext.current
+        val all = remember { (ctx.getSystemService(Context.USB_SERVICE) as UsbManager).deviceList.values.toList() }
+        if (all.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Text("USB devices this phone sees right now:", color = Palette.muted, fontFamily = Mono, fontSize = 12.sp)
+            all.forEach { d ->
+                Text("• %04x:%04x  %s".format(d.vendorId, d.productId, d.productName ?: d.deviceName),
+                    color = Palette.ink, fontFamily = Mono, fontSize = 11.sp)
+            }
+            Text("If your board isn't listed, it's a cable/OTG issue or it's connected through another board, not the phone.",
+                color = Palette.muted, fontFamily = Mono, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+        } else {
+            Text("This phone sees no USB devices at all — check the OTG cable supports data, and that the board is powered.",
+                color = Color(0xFFFFB300), fontFamily = Mono, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        }
     } else devices.forEach { d ->
         BtChoice(d.productName ?: "USB device", EspFlasher.describe(d), d == selected, accent) { onPick(d) }
     }
