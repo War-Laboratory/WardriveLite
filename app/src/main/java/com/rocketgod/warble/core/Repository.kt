@@ -358,6 +358,8 @@ class Repository(private val context: Context, private val scope: CoroutineScope
     fun cellTowers() = dao.cellTowers()
     suspend fun cellTower(id: String) = dao.cellTower(id)
 
+    suspend fun wifiCaps(): List<String> = withContext(Dispatchers.IO) { dao.wifiCaps() }
+
     fun pmkids() = dao.pmkids()
     suspend fun pmkid(id: String) = dao.pmkid(id)
 

@@ -775,6 +775,8 @@ class WarbleViewModel(app: Application) : AndroidViewModel(app) {
         .flatMapLatest { on -> if (on) repo.dao().monitorCatCounts() else kotlinx.coroutines.flow.flowOf(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    suspend fun wifiCaps(): List<String> = repo.wifiCaps()
+
     suspend fun obsByCat(type: String, cat: String, limit: Int = 500): List<com.rocketgod.warble.data.ObservationEntity> =
         withContext(Dispatchers.IO) { repo.dao().obsByCat(type, cat, limit) }
     suspend fun obsMonitorByCat(cat: String, limit: Int = 500): List<com.rocketgod.warble.data.ObservationEntity> =

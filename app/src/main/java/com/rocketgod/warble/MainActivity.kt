@@ -1013,6 +1013,7 @@ private fun App(uiFontScale: Float = 1f, onUiFontScale: (Float) -> Unit = {}) {
                 loadCat = { t, c -> vm.obsByCat(t, c) },
                 loadMonitorCat = { c -> vm.obsMonitorByCat(c) },
                 loadNotable = { brands -> vm.obsByMakers(brands) },
+                loadWifiSecurity = { vm.wifiCaps() },
                 exportSessions = exportSessions,
                 onSelectObs = { o ->
                     val cid = if (o.type == "CELL")

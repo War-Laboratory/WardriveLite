@@ -102,7 +102,8 @@ fun SignalDetail(
         c.channel?.let { Field("Channel", "$it") }
         com.rocketgod.warble.model.wifiStandardLabel(c.wifiStandard, c.frequency)?.let { Field("Wi-Fi standard", it) }
         c.distanceMm?.let { Field("Distance (RTT)", String.format("%.1f m", it / 1000.0)) }
-        c.capabilities?.let { Field("Capabilities", it) }
+        if (c.type == com.rocketgod.warble.model.SignalType.WIFI) SignalSecurityBlock(c.capabilities)
+        else c.capabilities?.let { Field("Capabilities", it) }
         Field("Connectable", if (c.connectable) "Yes" else "No")
 
         Section("ACTIVITY", accent)
@@ -138,6 +139,31 @@ private fun Section(title: String, accent: Color) {
 }
 
 @Composable
+@Composable
+private fun SignalSecurityBlock(capabilities: String?) {
+    val info = com.rocketgod.warble.classify.WifiSecurity.parse(capabilities)
+    Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+        Text("Security", color = Palette.muted, fontFamily = Mono, fontSize = 14.sp, modifier = Modifier.width(130.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(info.label, color = Palette.ink, fontFamily = Mono, fontSize = 14.sp)
+                Spacer(Modifier.width(8.dp))
+                val gc = Color(com.rocketgod.warble.classify.WifiSecurity.gradeArgb(info.grade).toInt())
+                if (info.grade != com.rocketgod.warble.classify.WifiSecurity.Grade.UNKNOWN)
+                    Text(com.rocketgod.warble.classify.WifiSecurity.gradeWord(info.grade), color = gc,
+                        fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = 11.sp,
+                        modifier = Modifier.background(gc.copy(alpha = 0.14f), RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 2.dp))
+            }
+            info.auth?.let { Text("Auth: $it" + (info.cipher?.let { c -> "  ·  $c" } ?: ""), color = Palette.muted, fontFamily = Mono, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp)) }
+            info.pmf?.let { Text("PMF: $it", color = Palette.muted, fontFamily = Mono, fontSize = 12.sp) }
+            info.notes.forEach { n ->
+                Text("• $n", color = Color(com.rocketgod.warble.classify.WifiSecurity.gradeArgb(info.grade).toInt()), fontFamily = Mono, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+            }
+            capabilities?.let { Text(it, color = Palette.muted.copy(alpha = 0.6f), fontFamily = Mono, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp)) }
+        }
+    }
+}
+
 private fun Field(label: String, value: String) {
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Text(label, color = Palette.muted, fontFamily = Mono, fontSize = 13.sp, modifier = Modifier.width(120.dp))

@@ -109,6 +109,7 @@ fun FieldReportScreen(
     loadCat: suspend (String, String) -> List<ObservationEntity> = { _, _ -> emptyList() },
     loadMonitorCat: suspend (String) -> List<ObservationEntity> = { emptyList() },
     loadNotable: suspend (List<String>) -> List<ObservationEntity> = { emptyList() },
+    loadWifiSecurity: suspend () -> List<String> = { emptyList() },
     onExportNew: () -> Unit,
     onExportAll: () -> Unit,
     onImport: () -> Unit,
@@ -360,6 +361,59 @@ fun FieldReportScreen(
                     }
                     Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.line.copy(alpha = 0.3f)))
                     if (open) ExpandedRows({ loadMonitorCat(cat) }, accent, Palette.gold, onSelectObs)
+                }
+            }
+        }
+
+        run {
+            val secOpen = expanded["m:security"] == true
+            val caps by produceState<List<String>?>(null) { value = loadWifiSecurity() }
+            item(key = "master_security") {
+                Spacer(Modifier.height(14.dp))
+                Row(
+                    Modifier.fillMaxWidth().background(Palette.panel, RoundedCornerShape(10.dp))
+                        .clickable { expanded["m:security"] = !secOpen }.padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(if (secOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, tint = Palette.muted, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Icon(Icons.Filled.Wifi, null, tint = accent, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("NETWORK SECURITY", color = Palette.ink, fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("${caps?.size ?: 0}", color = Palette.muted, fontFamily = Mono, fontSize = 14.sp)
+                }
+                if (secOpen) Text("Encryption each Wi-Fi network advertises in its beacon — survey data, no key material. The weak ones (open, WEP, WPS) are worth a closer look.",
+                    color = Palette.muted, fontFamily = Mono, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp, start = 2.dp))
+            }
+            if (secOpen) item(key = "security_rows") {
+                val list = caps
+                if (list == null) {
+                    Text("Reading…", color = Palette.muted, fontFamily = Mono, fontSize = 13.sp, modifier = Modifier.padding(vertical = 10.dp, horizontal = 6.dp))
+                } else {
+                    val tally = LinkedHashMap<com.rocketgod.warble.classify.WifiSecurity.Grade, Int>()
+                    var wps = 0
+                    for (c in list) {
+                        val info = com.rocketgod.warble.classify.WifiSecurity.parse(c.ifBlank { null })
+                        tally[info.grade] = (tally[info.grade] ?: 0) + 1
+                        if (info.wps) wps++
+                    }
+                    Column(Modifier.padding(vertical = 4.dp)) {
+                        for (g in com.rocketgod.warble.classify.WifiSecurity.Grade.values()) {
+                            val n = tally[g] ?: 0
+                            if (n == 0) continue
+                            val gc = Color(com.rocketgod.warble.classify.WifiSecurity.gradeArgb(g).toInt())
+                            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp, horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(10.dp).background(gc, RoundedCornerShape(5.dp)))
+                                Spacer(Modifier.width(10.dp))
+                                Text(gradeName(g), color = Palette.ink, fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                                Text("$n", color = gc, fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            }
+                            Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.line.copy(alpha = 0.3f)))
+                        }
+                        if (wps > 0) Text("$wps network${if (wps == 1) "" else "s"} advertise WPS — a known weak point.",
+                            color = Color(0xFFFFB300), fontFamily = Mono, fontSize = 13.sp, modifier = Modifier.padding(top = 10.dp, start = 6.dp))
+                    }
                 }
             }
         }
@@ -629,6 +683,14 @@ private fun DeviceRow(o: ObservationEntity, accent: Color, tint: Color, noun: St
 
 private fun fmtExportDate(ts: Long): String =
     SimpleDateFormat("MMM d · h:mm a", Locale.US).format(Date(ts))
+
+private fun gradeName(g: com.rocketgod.warble.classify.WifiSecurity.Grade): String = when (g) {
+    com.rocketgod.warble.classify.WifiSecurity.Grade.OPEN -> "Open / unencrypted"
+    com.rocketgod.warble.classify.WifiSecurity.Grade.WEAK -> "Weak (WEP / WPA1 / TKIP)"
+    com.rocketgod.warble.classify.WifiSecurity.Grade.OK -> "WPA2 (OK)"
+    com.rocketgod.warble.classify.WifiSecurity.Grade.STRONG -> "WPA3 / Enterprise (strong)"
+    com.rocketgod.warble.classify.WifiSecurity.Grade.UNKNOWN -> "Unknown"
+}
 
 private fun sortDevices(list: List<ObservationEntity>, sortMode: SortMode): List<ObservationEntity> = when (sortMode) {    SortMode.SIGNAL -> list.sortedByDescending { it.bestRssi }
     SortMode.SEEN -> list.sortedByDescending { it.timesSeen }

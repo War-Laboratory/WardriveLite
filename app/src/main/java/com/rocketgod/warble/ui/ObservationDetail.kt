@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -103,7 +104,7 @@ fun ObservationDetail(
                 o.channel?.let { Field("Channel", "$it") }
                 o.frequency?.let { Field("Frequency", "$it MHz  (${band(it)})") }
                 com.rocketgod.warble.model.wifiStandardLabel(o.wifiStandard, o.frequency)?.let { Field("Wi-Fi standard", it) }
-                o.capabilities?.let { Field("Security", it) }
+                SecurityBlock(o.capabilities, accent)
             }
             "CELL" -> {
                 Section("CELL TOWER", accent)
@@ -178,6 +179,31 @@ private fun Section(title: String, accent: Color) {
     Text(title, color = accent, fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = 14.sp)
     Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.line))
     Spacer(Modifier.height(6.dp))
+}
+
+@Composable
+private fun SecurityBlock(capabilities: String?, accent: Color) {
+    val info = com.rocketgod.warble.classify.WifiSecurity.parse(capabilities)
+    Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+        Text("Security", color = Palette.muted, fontFamily = Mono, fontSize = 14.sp, modifier = Modifier.width(130.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(info.label, color = Palette.ink, fontFamily = Mono, fontSize = 14.sp)
+                Spacer(Modifier.width(8.dp))
+                val gc = Color(com.rocketgod.warble.classify.WifiSecurity.gradeArgb(info.grade).toInt())
+                if (info.grade != com.rocketgod.warble.classify.WifiSecurity.Grade.UNKNOWN)
+                    Text(com.rocketgod.warble.classify.WifiSecurity.gradeWord(info.grade), color = gc,
+                        fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = 11.sp,
+                        modifier = Modifier.background(gc.copy(alpha = 0.14f), RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 2.dp))
+            }
+            info.auth?.let { Text("Auth: $it" + (info.cipher?.let { c -> "  ·  $c" } ?: ""), color = Palette.muted, fontFamily = Mono, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp)) }
+            info.pmf?.let { Text("PMF: $it", color = Palette.muted, fontFamily = Mono, fontSize = 12.sp) }
+            info.notes.forEach { n ->
+                Text("• $n", color = Color(com.rocketgod.warble.classify.WifiSecurity.gradeArgb(info.grade).toInt()), fontFamily = Mono, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+            }
+            capabilities?.let { Text(it, color = Palette.muted.copy(alpha = 0.6f), fontFamily = Mono, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp)) }
+        }
+    }
 }
 
 @Composable

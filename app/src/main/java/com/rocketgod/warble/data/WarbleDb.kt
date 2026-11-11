@@ -218,6 +218,9 @@ interface WarbleDao {
     @Query("SELECT * FROM observations ORDER BY name COLLATE NOCASE ASC")
     fun allSorted(): Flow<List<ObservationEntity>>
 
+    @Query("SELECT COALESCE(capabilities,'') FROM observations WHERE type = 'WIFI'")
+    suspend fun wifiCaps(): List<String>
+
     @Query("SELECT category, COUNT(*) AS c FROM observations GROUP BY category")
     fun categoryCounts(): Flow<List<CategoryCount>>
 
