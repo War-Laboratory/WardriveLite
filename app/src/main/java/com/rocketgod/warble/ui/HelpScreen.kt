@@ -44,6 +44,8 @@ import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.Watch
 import com.rocketgod.warble.model.Skin
 import androidx.compose.material3.Icon
@@ -101,6 +103,8 @@ fun HelpScreen(
     onApiSettings: () -> Unit = {},
     onPrivacy: () -> Unit = {},
     onDiag: () -> Unit = {},
+    onFlasher: () -> Unit = {},
+    onTerminal: () -> Unit = {},
     onCheckUpdates: () -> Unit = {},
     onUpdateWatch: () -> Unit = {},
     onReplayOnboarding: () -> Unit, onBack: () -> Unit
@@ -239,6 +243,12 @@ fun HelpScreen(
             LinkButton(Icons.Filled.Key, "API keys", "WiGLE + WDGWars keys", accent, deep, filled = true) { onApiSettings() }
             Spacer(Modifier.height(10.dp))
             LinkButton(Icons.Filled.Shield, "Privacy & uploads", "Exclusion zones + blocked devices", accent, deep, filled = true) { onPrivacy() }
+        }
+
+        SettingsGroup(Icons.Filled.Usb, "ESP32 boards", accent, openGroup) {
+            LinkButton(Icons.Filled.Usb, "Flash a board over USB", "Koko Dual-Band Wardriver or your own .bin", accent, deep, filled = true) { onFlasher() }
+            Spacer(Modifier.height(10.dp))
+            LinkButton(Icons.Filled.Keyboard, "Terminal", "Send commands to a USB board", accent, deep, filled = true) { onTerminal() }
         }
 
         SettingsGroup(Icons.Filled.SystemUpdate, "Updates & maintenance", accent, openGroup) {

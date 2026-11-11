@@ -11,6 +11,7 @@ enum class NotableCategory(val banner: String, val noun: String, val colorArgb: 
     HACKTOOL("", "", 0xFFFF3B3B),
     TRACKER("TRACKER", "tracker", 0xFFFFD23B),
     TRAFFIC("ALPR CAM", "ALPR cam", 0xFFFFB300),
+    GUNSHOT("GUNSHOT SENSOR", "gunshot sensor", 0xFFFF2E88),
 }
 
 data class NotableHit(val brand: String, val category: NotableCategory) {
@@ -107,6 +108,9 @@ object NotableDevices {
         "58:00:e3", "90:35:ea", "5c:93:a2", "64:6e:69", "48:27:ea", "a4:cf:12", "82:6b:f2",
     )
 
+    private const val FLOCK_GATT = "e8ccbb38-9532-46a8-9fe5-1814df172e6f"
+    private const val NORDIC_DFU = "00001530-1212-efde-1523-785feabcd123"
+
     fun isFlockProbeOui(mac: String): Boolean =
         mac.length >= 8 && mac.substring(0, 8).lowercase() in FLOCK_PROBE_OUIS
 
@@ -124,6 +128,10 @@ object NotableDevices {
                 (l.startsWith("penguin") && (l.length == 7 || !l[7].isLetter())) ||
                 l.contains("pigvision") || l.contains("fs ext battery")
             if (flockName) return NotableHit("Flock", NotableCategory.SURVEILLANCE)
+            // SHOK3R fork: Penguin battery packs also advertise a bare 10-digit serial, or "DfuTarg"
+            // while updating (Flock You firmware-derived signatures, MIT).
+            if (name.length == 10 && name.all { it.isDigit() } && serviceUuids.any { it.lowercase() == FLOCK_GATT || it.lowercase() == NORDIC_DFU })
+                return NotableHit("Flock", NotableCategory.SURVEILLANCE)
 
             if (l.contains("pandwarf") || l.contains("rogue pro")) return NotableHit("PandwaRF", NotableCategory.RFTOOL)
 
@@ -132,6 +140,14 @@ object NotableDevices {
             if (l.contains("pwnagotchi")) return NotableHit("Pwnagotchi", NotableCategory.HACKTOOL)
 
             if (l.startsWith("quest") || l.contains("meta quest")) return null
+        }
+        // SHOK3R fork: Raven acoustic gunshot sensors (Flock / SoundThinking) expose GATT
+        // services 0x3100-0x3500; the Flock accessory service is a fixed 128-bit UUID.
+        for (u in serviceUuids) {
+            val lu = u.trim().lowercase()
+            if (lu == FLOCK_GATT) return NotableHit("Flock", NotableCategory.SURVEILLANCE)
+            val v = shortUuid(lu)
+            if (v != null && v in 0x3100..0x3500) return NotableHit("Raven", NotableCategory.GUNSHOT)
         }
         if (key != null && key.length >= 8) OUI[key.substring(0, 8).lowercase()]?.let { return it }
         if (companyId != null) ID[companyId]?.let { return it }
@@ -178,6 +194,8 @@ object NotableDevices {
             val c = stampedCategory.lowercase()
             if (c.contains("flipper")) return ThreatHit(stampedCategory, ThreatLane.ATTACK)
 
+            if (c.contains("raven") || c.contains("gunshot"))
+                return ThreatHit(NotableHit("Raven", NotableCategory.GUNSHOT).readable, ThreatLane.SURVEILLANCE)
             if (c.contains("flock") || c.contains("penguin") || c.contains("pigvision"))
                 return ThreatHit(NotableHit("Flock", NotableCategory.SURVEILLANCE).readable, ThreatLane.SURVEILLANCE)
             for (cat in NotableCategory.values()) {

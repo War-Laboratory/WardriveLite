@@ -102,6 +102,8 @@ sealed interface Screen {
     data object Pmkids : Screen
     data class PmkidDetail(val id: String) : Screen
     data object Privacy : Screen
+    data object Flasher : Screen
+    data object Terminal : Screen
 }
 
 private val usbAttachFlow = kotlinx.coroutines.flow.MutableStateFlow<android.hardware.usb.UsbDevice?>(null)
@@ -366,27 +368,30 @@ private fun App(uiFontScale: Float = 1f, onUiFontScale: (Float) -> Unit = {}) {
 
     fun sendToWdgwNow() {
         val k = (prefs.getString("wdgw_key", "") ?: "").trim()
-        if (k.isBlank()) { wdgwSendAfterSave = true; showWigle = true; return }
-        vm.uploadTargets.value = "WDGWars"
-        vm.sendToWdgw(k) { _, _ -> }
+        val dk = (prefs.getString("wardrift_key", "") ?: "").trim()
+        if (k.isBlank() && dk.isBlank()) { wdgwSendAfterSave = true; showWigle = true; return }
+        vm.uploadTargets.value = listOfNotNull(if (k.isNotBlank()) "WDGWars" else null, if (dk.isNotBlank()) "Wardrift" else null).joinToString(" + ")
+        vm.sendToWdgw(k, dk) { _, _ -> }
     }
 
     fun quickUpload() {
         val n = (prefs.getString("wigle_name", "") ?: "").trim()
         val t = (prefs.getString("wigle_token", "") ?: "").trim()
         val k = (prefs.getString("wdgw_key", "") ?: "").trim()
+        val dk = (prefs.getString("wardrift_key", "") ?: "").trim()
         val hasWigle = n.isNotBlank() && t.isNotBlank()
-        val hasWdgw = k.isNotBlank()
+        val hasWdgw = k.isNotBlank() || dk.isNotBlank()
         if (!hasWigle && !hasWdgw) { wigleSendAfterSave = false; showWigle = true; return }
+        val wdgName = listOfNotNull(if (k.isNotBlank()) "WDGWars" else null, if (dk.isNotBlank()) "Wardrift" else null).joinToString(" + ")
         vm.uploadTargets.value = when {
-            hasWigle && hasWdgw -> "WiGLE + WDGWars"
+            hasWigle && hasWdgw -> "WiGLE + $wdgName"
             hasWigle -> "WiGLE"
-            else -> "WDGWars"
+            else -> wdgName
         }
 
         fun toast(msg: String) = android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
         if (hasWigle) vm.sendToWigle(n, t) { ok, msg -> if (ok) refreshWigleLife(); toast(msg) }
-        if (hasWdgw) vm.sendToWdgw(k) { _, msg -> toast(msg) }
+        if (hasWdgw) vm.sendToWdgw(k, dk) { _, msg -> toast(msg) }
     }
 
     fun batteryExempt(): Boolean {
@@ -544,6 +549,7 @@ private fun App(uiFontScale: Float = 1f, onUiFontScale: (Float) -> Unit = {}) {
         }
     }
     fun engage(d: android.hardware.usb.UsbDevice) {
+        if (com.rocketgod.warble.usb.EspFlasher.active) return
 
         val nowE = System.currentTimeMillis()
         if (d.deviceId == lastEngageId && nowE - lastEngageAt < 4000) return
@@ -1135,6 +1141,8 @@ private fun App(uiFontScale: Float = 1f, onUiFontScale: (Float) -> Unit = {}) {
                 onSkin = { vm.skin.value = it; prefs.edit().putString("skin", it.name).apply() },
                 fontScale = uiFontScale, onFontScale = onUiFontScale,
                 onDiag = { showDiag = true },
+                onFlasher = { go(Screen.Flasher) },
+                onTerminal = { go(Screen.Terminal) },
                 wifiPriority = wifiPriorityUi,
                 onWifiPriority = { vm.setWifiPriority(it); prefs.edit().putBoolean("wifi_priority", it).apply() },
                 backgroundScan = bgScanUi,
@@ -1203,6 +1211,12 @@ private fun App(uiFontScale: Float = 1f, onUiFontScale: (Float) -> Unit = {}) {
                 onBack = { back() }
             )
         }
+        is Screen.Flasher -> stateHolder.SaveableStateProvider("flasher") {
+            com.rocketgod.warble.ui.FlasherScreen(accent = accent, onBack = { back() })
+        }
+        is Screen.Terminal -> stateHolder.SaveableStateProvider("terminal") {
+            com.rocketgod.warble.ui.TerminalScreen(accent = accent, onBack = { back() })
+        }
         is Screen.Satellites -> stateHolder.SaveableStateProvider("sats") {
             com.rocketgod.warble.ui.SatelliteListScreen(
                 gnss = gnss, logged = gnssSats, accent = accent,
@@ -1269,6 +1283,7 @@ private fun App(uiFontScale: Float = 1f, onUiFontScale: (Float) -> Unit = {}) {
             var wName by remember { mutableStateOf(prefs.getString("wigle_name", "") ?: "") }
             var wToken by remember { mutableStateOf(prefs.getString("wigle_token", "") ?: "") }
             var wdKey by remember { mutableStateOf(prefs.getString("wdgw_key", "") ?: "") }
+            var drKey by remember { mutableStateOf(prefs.getString("wardrift_key", "") ?: "") }
             val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
             val fieldColors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                 focusedTextColor = Palette.ink, unfocusedTextColor = Palette.ink,
@@ -1312,6 +1327,14 @@ private fun App(uiFontScale: Float = 1f, onUiFontScale: (Float) -> Unit = {}) {
                         Spacer(Modifier.height(6.dp))
                         Text("Get your WDGWars key ↗", color = accent, fontFamily = Mono, fontSize = 13.sp,
                             modifier = Modifier.clickable { uriHandler.openUri("https://wdgwars.pl/profile/") })
+                        Spacer(Modifier.height(16.dp))
+                        Text("Wardrift — character API key (wdk_…) from wardrift.net. Sent along with every WDGWars upload.",
+                            color = Palette.muted, fontFamily = Mono, fontSize = 14.sp)
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedTextField(value = drKey, onValueChange = { drKey = it },
+                            singleLine = true, label = { Text("Wardrift API Key") },
+                            textStyle = androidx.compose.ui.text.TextStyle(color = Palette.ink, fontFamily = Mono),
+                            colors = fieldColors)
                     }
                 },
                 confirmButton = {
@@ -1321,6 +1344,7 @@ private fun App(uiFontScale: Float = 1f, onUiFontScale: (Float) -> Unit = {}) {
                                 .putString("wigle_name", wName.trim())
                                 .putString("wigle_token", wToken.trim())
                                 .putString("wdgw_key", wdKey.trim())
+                                .putString("wardrift_key", drKey.trim())
                                 .apply()
                             val sendW = wigleSendAfterSave
                             val sendD = wdgwSendAfterSave

@@ -708,7 +708,7 @@ class WarbleViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun sendToWdgw(key: String, onResult: (ok: Boolean, message: String) -> Unit) {
+    fun sendToWdgw(key: String, driftKey: String = "", onResult: (ok: Boolean, message: String) -> Unit) {
         if (wdgwPhase.value != SendPhase.IDLE && wdgwJob?.isActive == true) {
             onResult(false, "Already uploading to WDGWars…"); return
         }
@@ -717,13 +717,19 @@ class WarbleViewModel(app: Application) : AndroidViewModel(app) {
             var paused = false
             try {
                 beginSendPauseScan(); paused = true
-                ensureWdgwUsername(key)
+                if (key.isNotBlank()) ensureWdgwUsername(key)
                 wdgwPhase.value = SendPhase.UPLOADING
                 val r = repo.sendToWdgwStreamed(
                     RELEASE, nextExportName("WDGWars"),
                     upload = { file, fn ->
-                        val res = withContext(Dispatchers.IO) { com.rocketgod.warble.net.WdgwApi.uploadFile(key, file, fn) }
-                        res.ok to res.message
+                        // SHOK3R fork: the same CSV also goes to Wardrift when a key is set.
+                        withContext(Dispatchers.IO) {
+                            val wd = if (key.isNotBlank()) com.rocketgod.warble.net.WdgwApi.uploadFile(key, file, fn) else null
+                            val dr = if (driftKey.isNotBlank()) com.rocketgod.warble.net.WardriftApi.uploadFile(driftKey, file, fn) else null
+                            val primary = wd ?: dr!!
+                            val note = if (wd != null && dr != null && !dr.ok) " · ${dr.message}" else ""
+                            primary.ok to (primary.message + note)
+                        }
                     }
                 )
                 when {
@@ -731,7 +737,7 @@ class WarbleViewModel(app: Application) : AndroidViewModel(app) {
                     r.ok -> {
                         val other = r.sentTotal - r.sentWifi
                         val extra = if (other > 0) " (+$other other)" else ""
-                        onResult(true, "✓ Sent ${r.sentWifi} Wi-Fi$extra to WDGWars — count reset")
+                        onResult(true, "✓ Sent ${r.sentWifi} Wi-Fi$extra to " + listOfNotNull(if (key.isNotBlank()) "WDGWars" else null, if (driftKey.isNotBlank()) "Wardrift" else null).joinToString(" + ") + " — count reset")
                         wdgwPhase.value = SendPhase.SENT
                         launch { delay(4000); if (wdgwPhase.value == SendPhase.SENT) wdgwPhase.value = SendPhase.IDLE }
                     }
