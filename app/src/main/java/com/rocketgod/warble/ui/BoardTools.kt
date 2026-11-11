@@ -177,7 +177,8 @@ fun FlasherScreen(accent: Color, onBack: () -> Unit) {
 
     var devices by remember { mutableStateOf(listOf<UsbDevice>()) }
     var selected by remember { mutableStateOf<UsbDevice?>(null) }
-    var source by remember { mutableIntStateOf(0) }       // 0 latest Koko, 1 bundled, 2 custom file
+    var source by remember { mutableIntStateOf(0) }       // 0 online family, 1 bundled Koko, 2 custom file
+    var familyIdx by remember { mutableIntStateOf(0) }    // index into KokoFirmware.CATALOG (0 = Marauder, streams to phone)
     var targetIdx by remember { mutableIntStateOf(0) }
     var fullInstall by remember { mutableStateOf(true) }
     var release by remember { mutableStateOf<KokoFirmware.Release?>(null) }
@@ -199,10 +200,13 @@ fun FlasherScreen(accent: Color, onBack: () -> Unit) {
             delay(1500)
         }
     }
-    LaunchedEffect(Unit) {
-        val r = withContext(Dispatchers.IO) { runCatching { KokoFirmware.latest() } }
+    LaunchedEffect(familyIdx) {
+        release = null; targetIdx = 0
+        val fam = KokoFirmware.CATALOG[familyIdx]
+        releaseNote = "Checking GitHub for the latest ${fam.name}…"
+        val r = withContext(Dispatchers.IO) { runCatching { KokoFirmware.latest(fam.repo) } }
         r.onSuccess { release = it; releaseNote = "Latest: ${it.version}" }
-            .onFailure { releaseNote = (it.message ?: "Couldn't reach GitHub") + " · bundled ${KokoFirmware.BUNDLED_VERSION} still works offline"; if (source == 0) source = 1 }
+            .onFailure { releaseNote = it.message ?: "Couldn't reach GitHub" }
     }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) { customUri = uri; customName = uri.lastPathSegment?.substringAfterLast('/') ?: "firmware.bin"; source = 2 }
@@ -224,10 +228,22 @@ fun FlasherScreen(accent: Color, onBack: () -> Unit) {
         BtCard(accent) {
             BtLabel("2 · Firmware", accent)
             Spacer(Modifier.height(8.dp))
-            BtChoice("Koko Dual-Band Wardriver · latest", releaseNote, source == 0, accent) { if (release != null) source = 0 }
+            // Firmware family — pick the one that matches how you want GPS logged.
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                KokoFirmware.CATALOG.forEachIndexed { i, f ->
+                    BtPill(f.name + if (f.streamsToPhone) " ★" else "", accent, filled = source == 0 && familyIdx == i) { familyIdx = i; source = 0 }
+                }
+            }
+            val fam = KokoFirmware.CATALOG[familyIdx]
+            Text((if (fam.streamsToPhone) "Phone GPS: " else "On-board GPS: ") + fam.note,
+                color = if (fam.streamsToPhone) Palette.gold else Color(0xFFFFB300), fontFamily = Mono, fontSize = 12.sp,
+                modifier = Modifier.padding(top = 6.dp))
+            Spacer(Modifier.height(8.dp))
+            BtChoice("${fam.name} · latest", releaseNote, source == 0, accent) { source = 0 }
             val rel = release
             if (source == 0 && rel != null) {
                 Spacer(Modifier.height(4.dp))
+                Text("Pick your exact board:", color = Palette.muted, fontFamily = Mono, fontSize = 12.sp)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     rel.targets.forEachIndexed { i, t -> BtPill(t.name, accent, filled = i == targetIdx) { targetIdx = i } }
                 }
@@ -239,8 +255,9 @@ fun FlasherScreen(accent: Color, onBack: () -> Unit) {
                 Text(if (fullInstall) "Writes bootloader, partitions and app." else "Writes only the app; keeps settings.",
                     color = Palette.muted, fontFamily = Mono, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
             }
-            BtChoice("Koko Dual-Band Wardriver · ${KokoFirmware.BUNDLED_VERSION} (offline)",
-                "Built into this app · JCMK C5 / ESP32-C5-DevKitC-1", source == 1, accent) { source = 1 }
+            Spacer(Modifier.height(6.dp))
+            BtChoice("Koko Dual-Band Wardriver · ${KokoFirmware.BUNDLED_VERSION} (offline, standalone)",
+                "Built into this app · needs its own GPS + SD · ignores the phone", source == 1, accent) { source = 1 }
             BtChoice(if (customName.isEmpty()) "Pick a .bin file…" else "File: $customName",
                 "Any ESP32 image you trust (e.g. a merged .bin)", source == 2, accent) { picker.launch(arrayOf("*/*")) }
             if (source == 2) {
@@ -254,8 +271,9 @@ fun FlasherScreen(accent: Color, onBack: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(6.dp))
-            Text("Koko's firmware is built for the JCMK C5 Wardriver, ESP32-C5-DevKitC-1 and LilyGo T-Dongle C5. " +
-                "On other C5 boards (like a XIAO) it boots, but the GPS / SD / screen pins may not match.",
+            Text("★ = streams detections to this phone, so the phone's GPS tags and logs them into the same CSV you upload — " +
+                "no GPS module needed on the board. Standalone firmware logs on its own SD card and needs its own GPS. " +
+                "Firmware is built for specific C5 boards; on a different C5 (like a bare XIAO) it runs but the GPS / SD / screen pins may not match.",
                 color = Palette.muted, fontFamily = Mono, fontSize = 12.sp)
         }
 
@@ -278,7 +296,8 @@ fun FlasherScreen(accent: Color, onBack: () -> Unit) {
                                     val r = release ?: throw EspFlasher.FlashError("No release loaded")
                                     val t = r.targets[targetIdx.coerceIn(0, r.targets.size - 1)]
                                     size = t.flashSize
-                                    say("Koko ${r.version} · ${t.name} · ${if (fullInstall) "full install" else "app update"}")
+                                    chip = t.expectChipId
+                                    say("${KokoFirmware.CATALOG[familyIdx].name} ${r.version} · ${t.name} · ${if (fullInstall) "full install" else "app update"}")
                                     KokoFirmware.fetch(r, if (fullInstall) t.factory else t.update) { say(it) }.toMutableList()
                                 }
                                 1 -> KokoFirmware.bundled(ctx).toMutableList()

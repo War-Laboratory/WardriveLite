@@ -246,9 +246,12 @@ fun HelpScreen(
         }
 
         SettingsGroup(Icons.Filled.Usb, "ESP32 boards", accent, openGroup) {
-            LinkButton(Icons.Filled.Usb, "Flash a board over USB", "Koko Dual-Band Wardriver or your own .bin", accent, deep, filled = true) { onFlasher() }
+            LinkButton(Icons.Filled.Usb, "Flash a board over USB", "Marauder (phone GPS) · Koko standalone · your own .bin", accent, deep, filled = true) { onFlasher() }
             Spacer(Modifier.height(10.dp))
             LinkButton(Icons.Filled.Keyboard, "Terminal", "Send commands to a USB board", accent, deep, filled = true) { onTerminal() }
+            Spacer(Modifier.height(10.dp))
+            Text("Flash Marauder (★) so the board streams detections here and the phone's GPS tags and logs them — no GPS module needed on the board. Koko's standalone logger needs its own GPS + SD and ignores the phone.",
+                color = Palette.muted, fontFamily = Mono, fontSize = 13.sp, modifier = Modifier.padding(start = 14.dp, end = 4.dp))
         }
 
         SettingsGroup(Icons.Filled.SystemUpdate, "Updates & maintenance", accent, openGroup) {

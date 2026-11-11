@@ -15,8 +15,32 @@ object KokoFirmware {
     const val REPO = "justcallmekoko/ESP32DualBandWardriver"
     const val BUNDLED_VERSION = "v2.2.0"
 
+    /**
+     * A firmware family the flasher can install. [streamsToPhone] marks the ones that feed
+     * detections to this app over USB serial, so the PHONE'S GPS fix tags and logs them
+     * (no GPS module needed on the board). Standalone firmware logs on its own and ignores
+     * the phone, so it needs its own GPS module + SD card.
+     */
+    data class Family(
+        val id: String, val name: String, val repo: String,
+        val streamsToPhone: Boolean, val note: String,
+    )
+
+    val CATALOG = listOf(
+        Family("marauder", "ESP32 Marauder", "justcallmekoko/ESP32Marauder", true,
+            "Streams to this phone over USB · the phone's GPS tags & logs · no GPS module needed on the board"),
+        Family("koko", "Koko Dual-Band Wardriver", "justcallmekoko/ESP32DualBandWardriver", false,
+            "Standalone logger · needs its OWN GPS module + SD card · does NOT use the phone's GPS"),
+    )
+
     data class Seg(val role: String, val offset: Int, val size: Int, val sha256: String, val fileName: String)
-    data class Target(val id: String, val name: String, val flashSize: Int, val factory: List<Seg>, val update: List<Seg>)
+    data class Target(val id: String, val name: String, val flashSize: Int, val esptoolChip: String?, val factory: List<Seg>, val update: List<Seg>) {
+        /** ESP ROM chip ID for the flasher's safety check, or null to skip it. */
+        val expectChipId: Int? get() = when (esptoolChip) {
+            "esp32c5" -> 23; "esp32c6" -> 13; "esp32c3" -> 5; "esp32c2" -> 12
+            "esp32s3" -> 9; "esp32s2" -> 2; "esp32" -> 0; "esp32h2" -> 16; else -> null
+        }
+    }
     data class Release(val version: String, val targets: List<Target>, val urls: Map<String, String>)
 
     private fun get(url: String, accept: String = "application/octet-stream"): ByteArray {
@@ -32,8 +56,8 @@ object KokoFirmware {
     }
 
     /** Latest release that carries an installer manifest. Blocking. */
-    fun latest(): Release {
-        val rel = JSONObject(String(get("https://api.github.com/repos/$REPO/releases/latest", "application/vnd.github+json")))
+    fun latest(repo: String = REPO): Release {
+        val rel = JSONObject(String(get("https://api.github.com/repos/$repo/releases/latest", "application/vnd.github+json")))
         val urls = HashMap<String, String>()
         val assets = rel.optJSONArray("assets")
         if (assets != null) for (i in 0 until assets.length()) {
@@ -55,7 +79,8 @@ object KokoFirmware {
                     Seg(s.getString("role"), s.getInt("offset"), s.getInt("size"), s.getString("sha256").lowercase(), s.getString("fileName"))
                 }
             }
-            targets += Target(t.getString("id"), t.getString("displayName"), fl.getInt("sizeBytes"), segs("factory"), segs("update"))
+            targets += Target(t.getString("id"), t.getString("displayName"), fl.getInt("sizeBytes"),
+                t.optString("esptoolChip").ifBlank { null }, segs("factory"), segs("update"))
         }
         return Release(m.optString("version", rel.optString("tag_name")), targets, urls)
     }
