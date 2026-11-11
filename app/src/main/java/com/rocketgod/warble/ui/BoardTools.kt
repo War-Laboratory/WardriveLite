@@ -194,10 +194,10 @@ fun FlasherScreen(accent: Color, onBack: () -> Unit) {
     var selected by remember { mutableStateOf<UsbDevice?>(null) }
     var source by remember { mutableIntStateOf(0) }       // 0 online family, 1 bundled Koko, 2 custom file
     var familyIdx by remember { mutableIntStateOf(0) }    // index into KokoFirmware.CATALOG (0 = Marauder, streams to phone)
-    var targetIdx by remember { mutableIntStateOf(0) }
+    var buildIdx by remember { mutableIntStateOf(0) }
     var fullInstall by remember { mutableStateOf(true) }
-    var release by remember { mutableStateOf<KokoFirmware.Release?>(null) }
-    var releaseNote by remember { mutableStateOf("Checking GitHub for the latest release…") }
+    var builds by remember { mutableStateOf<List<KokoFirmware.FwBuild>?>(null) }
+    var releaseNote by remember { mutableStateOf("Loading firmware list…") }
     var customUri by remember { mutableStateOf<Uri?>(null) }
     var customName by remember { mutableStateOf("") }
     var customOffset by remember { mutableStateOf("0x0") }
@@ -216,12 +216,12 @@ fun FlasherScreen(accent: Color, onBack: () -> Unit) {
         }
     }
     LaunchedEffect(familyIdx) {
-        release = null; targetIdx = 0
+        builds = null; buildIdx = 0
         val fam = KokoFirmware.CATALOG[familyIdx]
-        releaseNote = "Checking GitHub for the latest ${fam.name}…"
-        val r = withContext(Dispatchers.IO) { runCatching { KokoFirmware.latest(fam.repo) } }
-        r.onSuccess { release = it; releaseNote = "Latest: ${it.version}" }
-            .onFailure { releaseNote = it.message ?: "Couldn't reach GitHub" }
+        releaseNote = "Loading the ${fam.name} firmware list…"
+        val r = withContext(Dispatchers.IO) { runCatching { KokoFirmware.loadBuilds(fam) } }
+        r.onSuccess { builds = it; releaseNote = "${it.size} build${if (it.size == 1) "" else "s"} available" }
+            .onFailure { releaseNote = it.message ?: "Couldn't load the firmware list" }
     }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) { customUri = uri; customName = uri.lastPathSegment?.substringAfterLast('/') ?: "firmware.bin"; source = 2 }
@@ -250,25 +250,29 @@ fun FlasherScreen(accent: Color, onBack: () -> Unit) {
                 }
             }
             val fam = KokoFirmware.CATALOG[familyIdx]
-            Text((if (fam.streamsToPhone) "Phone GPS: " else "On-board GPS: ") + fam.note,
+            Text((if (fam.streamsToPhone) "★ Phone GPS — " else "") + fam.note,
                 color = if (fam.streamsToPhone) Palette.gold else Color(0xFFFFB300), fontFamily = Mono, fontSize = 12.sp,
                 modifier = Modifier.padding(top = 6.dp))
             Spacer(Modifier.height(8.dp))
-            BtChoice("${fam.name} · latest", releaseNote, source == 0, accent) { source = 0 }
-            val rel = release
-            if (source == 0 && rel != null) {
+            BtChoice("${fam.name}", releaseNote, source == 0, accent) { source = 0 }
+            val bs = builds
+            if (source == 0 && bs != null && bs.isNotEmpty()) {
+                val sel = bs[buildIdx.coerceIn(0, bs.size - 1)]
                 Spacer(Modifier.height(4.dp))
                 Text("Pick your exact board:", color = Palette.muted, fontFamily = Mono, fontSize = 12.sp)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    rel.targets.forEachIndexed { i, t -> BtPill(t.name, accent, filled = i == targetIdx) { targetIdx = i } }
+                    bs.forEachIndexed { i, t -> BtPill(t.name, accent, filled = i == buildIdx) { buildIdx = i } }
                 }
-                Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    BtPill("Full install", accent, filled = fullInstall) { fullInstall = true }
-                    BtPill("Update app only", accent, filled = !fullInstall) { fullInstall = false }
+                Text(sel.sub, color = Palette.muted, fontFamily = Mono, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+                if (sel.hasUpdateOnly) {
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        BtPill("Full install", accent, filled = fullInstall) { fullInstall = true }
+                        BtPill("Update app only", accent, filled = !fullInstall) { fullInstall = false }
+                    }
+                    Text(if (fullInstall) "Writes bootloader, partitions and app." else "Writes only the app; keeps settings.",
+                        color = Palette.muted, fontFamily = Mono, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                 }
-                Text(if (fullInstall) "Writes bootloader, partitions and app." else "Writes only the app; keeps settings.",
-                    color = Palette.muted, fontFamily = Mono, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
             }
             Spacer(Modifier.height(6.dp))
             BtChoice("Koko Dual-Band Wardriver · ${KokoFirmware.BUNDLED_VERSION} (offline, standalone)",
@@ -286,9 +290,9 @@ fun FlasherScreen(accent: Color, onBack: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(6.dp))
-            Text("★ = streams detections to this phone, so the phone's GPS tags and logs them into the same CSV you upload — " +
-                "no GPS module needed on the board. Standalone firmware logs on its own SD card and needs its own GPS. " +
-                "Firmware is built for specific C5 boards; on a different C5 (like a bare XIAO) it runs but the GPS / SD / screen pins may not match.",
+            Text("★ = streams detections to this phone, so the phone's GPS tags and logs them — no GPS module needed on the board. " +
+                "Biscuit flashes real Biscuit firmware (fetched from CodeHedge's public files); the board then works in the Biscuit app/manager, " +
+                "not live in this app. Firmware is built for specific C5 boards; on a different C5 it runs but GPS / SD / screen pins may not match.",
                 color = Palette.muted, fontFamily = Mono, fontSize = 12.sp)
         }
 
@@ -308,12 +312,14 @@ fun FlasherScreen(accent: Color, onBack: () -> Unit) {
                             var chip: Int? = EspFlasher.CHIP_ID_ESP32C5
                             val segs: MutableList<EspFlasher.Segment> = when (source) {
                                 0 -> {
-                                    val r = release ?: throw EspFlasher.FlashError("No release loaded")
-                                    val t = r.targets[targetIdx.coerceIn(0, r.targets.size - 1)]
-                                    size = t.flashSize
-                                    chip = t.expectChipId
-                                    say("${KokoFirmware.CATALOG[familyIdx].name} ${r.version} · ${t.name} · ${if (fullInstall) "full install" else "app update"}")
-                                    KokoFirmware.fetch(r, if (fullInstall) t.factory else t.update) { say(it) }.toMutableList()
+                                    val list = builds ?: throw EspFlasher.FlashError("No firmware list loaded")
+                                    val b = list[buildIdx.coerceIn(0, list.size - 1)]
+                                    size = b.flashSize
+                                    chip = b.chipId
+                                    val appOnly = b.hasUpdateOnly && !fullInstall
+                                    say("${KokoFirmware.CATALOG[familyIdx].name} · ${b.name} · ${if (appOnly) "app update" else "full install"}")
+                                    val loader = if (appOnly) b.loadUpdate!! else b.loadFactory
+                                    loader { say(it) }.toMutableList()
                                 }
                                 1 -> KokoFirmware.bundled(ctx).toMutableList()
                                 else -> {
@@ -326,7 +332,8 @@ fun FlasherScreen(accent: Color, onBack: () -> Unit) {
                                     mutableListOf(EspFlasher.Segment(off, bytes, customName))
                                 }
                             }
-                            if (source == 1 || (source == 0 && fullInstall)) KokoFirmware.otadataWipe(segs)?.let { segs.add(it) }
+                            val fullSet = source == 1 || (source == 0 && segs.any { it.offset == 0x8000 } && segs.any { it.offset == 0x10000 })
+                            if (fullSet) KokoFirmware.otadataWipe(segs)?.let { segs.add(it) }
                             EspFlasher.flash(ctx, d, segs.sortedBy { it.offset }, size, chip, { say(it) }) { progress = it }
                         } catch (e: Exception) {
                             say("✖ " + (e.message ?: e.javaClass.simpleName))

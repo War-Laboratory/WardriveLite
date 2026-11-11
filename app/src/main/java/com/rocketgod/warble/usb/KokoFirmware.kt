@@ -21,17 +21,48 @@ object KokoFirmware {
      * (no GPS module needed on the board). Standalone firmware logs on its own and ignores
      * the phone, so it needs its own GPS module + SD card.
      */
+    enum class Kind { INSTALLER_MANIFEST, BISCUIT }
+
     data class Family(
         val id: String, val name: String, val repo: String,
-        val streamsToPhone: Boolean, val note: String,
+        val streamsToPhone: Boolean, val note: String, val kind: Kind = Kind.INSTALLER_MANIFEST,
     )
 
     val CATALOG = listOf(
         Family("marauder", "ESP32 Marauder", "justcallmekoko/ESP32Marauder", true,
             "Streams to this phone over USB · the phone's GPS tags & logs · no GPS module needed on the board"),
+        Family("biscuit", "Biscuit (CodeHedge)", "CodeHedge/Adafruit_WebSerial_ESPTool", false,
+            "DIY Biscuit / Node for XIAO C5 · flashes real Biscuit firmware · use it with the Biscuit app/manager, not this app", Kind.BISCUIT),
         Family("koko", "Koko Dual-Band Wardriver", "justcallmekoko/ESP32DualBandWardriver", false,
             "Standalone logger · needs its OWN GPS module + SD card · does NOT use the phone's GPS"),
     )
+
+    /** A flashable build, normalized so the flasher UI doesn't care which firmware source it came from. */
+    class FwBuild(
+        val name: String,
+        val sub: String,
+        val flashSize: Int,
+        val chipId: Int?,
+        val hasUpdateOnly: Boolean,
+        val loadFactory: (log: (String) -> Unit) -> List<EspFlasher.Segment>,
+        val loadUpdate: ((log: (String) -> Unit) -> List<EspFlasher.Segment>)?,
+    )
+
+    /** Loads the selectable builds for a firmware family. Blocking. */
+    fun loadBuilds(fam: Family): List<FwBuild> = when (fam.kind) {
+        Kind.INSTALLER_MANIFEST -> {
+            val rel = latest(fam.repo)
+            rel.targets.map { t ->
+                FwBuild(t.name, "v${rel.version}", t.flashSize, t.expectChipId, hasUpdateOnly = true,
+                    loadFactory = { log -> fetch(rel, t.factory, log) },
+                    loadUpdate = { log -> fetch(rel, t.update, log) })
+            }
+        }
+        Kind.BISCUIT -> BiscuitFirmware.devices().map { d ->
+            FwBuild(d.name, "${d.group} v${d.version}", 8 * 1024 * 1024, 23, hasUpdateOnly = false,
+                loadFactory = { log -> BiscuitFirmware.fetch(d, log) }, loadUpdate = null)
+        }
+    }
 
     data class Seg(val role: String, val offset: Int, val size: Int, val sha256: String, val fileName: String)
     data class Target(val id: String, val name: String, val flashSize: Int, val esptoolChip: String?, val factory: List<Seg>, val update: List<Seg>) {
