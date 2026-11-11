@@ -360,7 +360,8 @@ fun TerminalScreen(accent: Color, onBack: () -> Unit) {
             if (conn == null) { say("✖ Couldn't open the board"); EspFlasher.active = false; return@launch }
             val p = EspFlasher.Port(conn, d)
             if (!p.open(115200)) { p.close(); say("✖ No serial interface on this device"); EspFlasher.active = false; return@launch }
-            p.setLines(dtr = true, rts = false)
+            // Idle lines: native USB likes DTR set; on UART bridges DTR drives IO0, so leave it off.
+            p.setLines(dtr = p.isUsbJtag, rts = false)
             withContext(Dispatchers.Main) { port = p }
             say("✓ Connected · 115200 baud")
             running.set(true)
@@ -396,7 +397,12 @@ fun TerminalScreen(accent: Color, onBack: () -> Unit) {
             else BtPill("Disconnect", accent, filled = true) { disconnect(); say("Disconnected") }
             BtPill("Reset board", accent, enabled = port != null) {
                 val p = port ?: return@BtPill
-                scope.launch(Dispatchers.IO) { p.setLines(dtr = false, rts = true); delay(150); p.setLines(dtr = true, rts = false); say("Board reset") }
+                scope.launch(Dispatchers.IO) {
+                    // Pulse EN with IO0 high = normal boot (not download mode)
+                    p.setLines(dtr = false, rts = true); delay(150); p.setLines(dtr = false, rts = false)
+                    if (p.isUsbJtag) say("Board reset · native USB re-connects, tap Connect again if it goes quiet")
+                    else { p.setLines(dtr = false, rts = false); say("Board reset") }
+                }
             }
             BtPill("Clear", accent) { log.clear() }
         }
