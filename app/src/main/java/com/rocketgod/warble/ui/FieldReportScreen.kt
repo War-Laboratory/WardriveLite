@@ -135,6 +135,7 @@ fun FieldReportScreen(
 ) {
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
     val masters = listOf(SignalType.BLE, SignalType.WIFI, SignalType.CELL)
+    val securityCaps by produceState<List<String>?>(null) { value = loadWifiSecurity() }
 
     LazyColumn(Modifier.fillMaxWidth().background(Palette.paper).padding(horizontal = 16.dp)) {
         item {
@@ -367,7 +368,7 @@ fun FieldReportScreen(
 
         run {
             val secOpen = expanded["m:security"] == true
-            val caps by produceState<List<String>?>(null) { value = loadWifiSecurity() }
+            val caps = securityCaps
             item(key = "master_security") {
                 Spacer(Modifier.height(14.dp))
                 Row(

@@ -139,7 +139,6 @@ private fun Section(title: String, accent: Color) {
 }
 
 @Composable
-@Composable
 private fun SignalSecurityBlock(capabilities: String?) {
     val info = com.rocketgod.warble.classify.WifiSecurity.parse(capabilities)
     Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
@@ -164,6 +163,7 @@ private fun SignalSecurityBlock(capabilities: String?) {
     }
 }
 
+@Composable
 private fun Field(label: String, value: String) {
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Text(label, color = Palette.muted, fontFamily = Mono, fontSize = 13.sp, modifier = Modifier.width(120.dp))
