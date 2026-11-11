@@ -30,6 +30,12 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug --stacktrace
 
+      - name: Render screen previews
+        continue-on-error: true
+        run: |
+          ./gradlew :app:recordPaparazziDebug --stacktrace
+          cd app/src/test/snapshots/images && zip -q ../../../../../screens.zip *.png
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -44,5 +50,7 @@ jobs:
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk WardriveLite-debug.apk
           gh release delete debug-latest --yes --cleanup-tag || true
-          gh release create debug-latest WardriveLite-debug.apk \
+          FILES="WardriveLite-debug.apk"
+          [ -f screens.zip ] && FILES="$FILES screens.zip"
+          gh release create debug-latest $FILES \
             --title "Latest debug build" --notes "Debug APK built from ${GITHUB_SHA::7}" --prerelease

@@ -21,6 +21,8 @@ object Store {
     @Volatile var hasFix = false
     @Volatile var scanning = false
     @Volatile var onNewAlert: ((Sighting) -> Unit)? = null
+    @Volatile var startTime = 0L
+    @Volatile var rowsWritten = 0
 
     /** A tracker is "following" if seen > FOLLOW_METERS from first sighting after FOLLOW_MS. */
     private const val FOLLOW_METERS = 500f
@@ -51,6 +53,8 @@ object Store {
         writer = w
         currentFile = f
         lastWritten.clear()
+        rowsWritten = 0
+        startTime = System.currentTimeMillis()
     }
 
     @Synchronized
@@ -76,6 +80,7 @@ object Store {
             if (o.name.isNotEmpty()) s.name = o.name
             s.rssi = o.rssi
             s.lastSeen = now
+            s.hits++
             if (o.channel != 0) s.channel = o.channel
             if (hasFix) {
                 if (s.lat == 0.0 || o.rssi >= s.bestRssi) { s.bestRssi = o.rssi; s.lat = lat; s.lon = lon }
@@ -83,9 +88,9 @@ object Store {
             }
             if (s.alert == null) {
                 val a = Detector.check(o)
-                if (a != null) { s.alert = a; fire = true }
+                if (a != null && Prefs.catEnabled(a.cat)) { s.alert = a; fire = true }
             }
-            if (s.alert?.category == "tracker" && !s.following && hasFix && s.firstFixTime != 0L &&
+            if (s.alert?.cat == Cat.TRACKER && !s.following && hasFix && s.firstFixTime != 0L &&
                 now - s.firstFixTime > FOLLOW_MS && distance(s.firstLat, s.firstLon, lat, lon) > FOLLOW_METERS
             ) {
                 s.following = true
@@ -111,8 +116,12 @@ object Store {
             "%.1f".format(Locale.US, alt), "%.1f".format(Locale.US, acc),
             "", s.mfgrId, o.type
         ).joinToString(",")
-        try { w.write(row); w.write("\n") } catch (_: Exception) {}
+        try { w.write(row); w.write("\n"); rowsWritten++ } catch (_: Exception) {}
     }
+
+    /** All CSV logs, newest first. */
+    fun sessions(ctx: Context): List<File> =
+        logDir(ctx).listFiles { f -> f.name.endsWith(".csv") }?.sortedByDescending { it.lastModified() } ?: emptyList()
 
     private fun csv(v: String): String =
         if (v.contains(',') || v.contains('"') || v.contains('\n'))

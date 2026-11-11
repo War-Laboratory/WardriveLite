@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Wardrive Lite</string>
+    <string name="widget_desc">Live scan counts and a start / stop button</string>
 </resources>

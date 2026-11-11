@@ -27,6 +27,9 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.telephony.CellIdentityNr
 import android.telephony.CellInfo
 import android.telephony.CellInfoGsm
@@ -69,6 +72,7 @@ class ScanService : Service() {
         }
         if (Store.scanning) return START_STICKY
 
+        Prefs.init(this)
         createChannels()
         startForeground(NOTIF_ID, buildStatus("Starting…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
 
@@ -79,6 +83,7 @@ class ScanService : Service() {
         Store.scanning = true
         Store.openLog(this)
         Store.onNewAlert = { s -> handler.post { notifyAlert(s) } }
+        ScanWidget.updateAll(this)
 
         startLocation()
         startWifi()
@@ -103,6 +108,7 @@ class ScanService : Service() {
         Store.onNewAlert = null
         Store.scanning = false
         Store.closeLog()
+        ScanWidget.updateAll(this)
         super.onDestroy()
     }
 
@@ -312,6 +318,7 @@ class ScanService : Service() {
             val gps = if (Store.hasFix) "GPS ±${Store.acc.toInt()}m" else "no GPS"
             val nm = getSystemService(NotificationManager::class.java)
             nm.notify(NOTIF_ID, buildStatus("WiFi $w · BLE $b · Cell $c · Alerts $a · $gps"))
+            ScanWidget.updateAll(this@ScanService)
             handler.postDelayed(this, 5000)
         }
     }
@@ -320,7 +327,7 @@ class ScanService : Service() {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CH_STATUS, "Scanning", NotificationManager.IMPORTANCE_LOW))
         nm.createNotificationChannel(
-            NotificationChannel(CH_ALERT, "Detections", NotificationManager.IMPORTANCE_HIGH).apply { enableVibration(true) }
+            NotificationChannel(CH_ALERT, "Detections", NotificationManager.IMPORTANCE_HIGH).apply { enableVibration(false) }
         )
     }
 
@@ -334,6 +341,7 @@ class ScanService : Service() {
         return NotificationCompat.Builder(this, CH_STATUS)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentTitle("Wardrive Lite scanning")
+            .setColor(Themes.current.accent)
             .setContentText(text)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -348,13 +356,26 @@ class ScanService : Service() {
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
         val a = s.alert ?: return
+        if (!Prefs.notify || a.severity < (Prefs.minSeverity.toIntOrNull() ?: 1)) return
+        if (Prefs.vibrate && a.severity >= 3) vibrate()
         val n = NotificationCompat.Builder(this, CH_ALERT)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle(a.label)
-            .setContentText("${s.name.ifEmpty { s.key }} · ${s.rssi} dBm")
+            .setContentText("${s.name.ifEmpty { s.key }} · ${s.rssi} dBm" + if (s.following) " · FOLLOWING YOU" else "")
+            .setColor(Themes.current.accent)
+            .setContentIntent(PendingIntent.getActivity(this, 2, Intent(this, MainActivity::class.java).putExtra("tab", 1), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
             .setPriority(if (a.severity >= 3) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .build()
         NotificationManagerCompat.from(this).notify(s.key.hashCode(), n)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun vibrate() {
+        try {
+            val v = if (Build.VERSION.SDK_INT >= 31) getSystemService(VibratorManager::class.java).defaultVibrator
+            else getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 120, 80, 120, 80, 260), -1))
+        } catch (_: Exception) {}
     }
 }

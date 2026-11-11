@@ -2,8 +2,21 @@ package com.example.wardrive
 
 enum class Kind { WIFI, BLE, CELL }
 
+/** Detection categories. Each can be switched off in Settings. */
+enum class Cat(val label: String, val tag: String) {
+    FLOCK("Flock ALPR camera", "FLOCK"),
+    GUNSHOT("Gunshot sensor", "SHOT"),
+    POLICE("Police gear", "COPS"),
+    LIGHTBAR("Police light bar", "LIGHT"),
+    RADAR("Radar / lidar", "RADAR"),
+    TRACKER("Tracker", "TRACK"),
+    CAMERA("Hidden camera", "CAM"),
+    FLIPPER("Flipper Zero", "FLIP"),
+    GLASSES("Smart glasses", "GLASS"),
+}
+
 /** What a detection rule decided this device is. severity: 1 = info, 2 = notable, 3 = high. */
-data class Alert(val category: String, val label: String, val severity: Int)
+data class Alert(val cat: Cat, val label: String, val severity: Int, val why: String = "")
 
 /** One raw observation coming from a scanner. */
 data class Obs(
@@ -41,4 +54,5 @@ class Sighting(
     var alert: Alert? = null
     var following = false
     var mfgrId: String = ""
+    var hits = 0
 }

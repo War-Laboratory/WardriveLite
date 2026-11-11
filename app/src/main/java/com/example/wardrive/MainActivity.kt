@@ -1,21 +1,20 @@
 package com.example.wardrive
 
 import android.Manifest
+import android.app.Dialog
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
-import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.View
-import android.widget.ArrayAdapter
-import android.widget.Button
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ListView
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,25 +24,23 @@ import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Marker
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), Actions {
 
     private val handler = Handler(Looper.getMainLooper())
-    private lateinit var status: TextView
-    private lateinit var startBtn: Button
-    private lateinit var alertList: ListView
-    private lateinit var allList: ListView
-    private lateinit var map: MapView
-    private lateinit var alertAdapter: ArrayAdapter<String>
-    private lateinit var allAdapter: ArrayAdapter<String>
-    private val tabs = mutableListOf<Button>()
+    private lateinit var ui: Ui
+    private lateinit var screens: List<Screen>
+    private lateinit var map: MapScreen
+    private val tabViews = mutableListOf<TextView>()
+    private lateinit var content: FrameLayout
+    private lateinit var title: TextView
     private var tab = 0
-    private var mapCentered = false
-    private var lastMapCount = -1
+
+    private val tabs = listOf("◉" to "HUD", "⚠" to "ALERTS", "≋" to "DEVICES", "⌖" to "MAP", "⚙" to "SETUP")
 
     private val permLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         if (hasLocation()) startScan()
@@ -52,138 +49,131 @@ class MainActivity : AppCompatActivity() {
 
     private val refresh = object : Runnable {
         override fun run() {
-            render()
+            if (tab != 4) screens[tab].render()
             handler.postDelayed(this, 2000)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Prefs.init(this)
         Configuration.getInstance().userAgentValue = packageName
+        ui = Ui(this)
+        val p = ui.p
+        window.setBackgroundDrawable(ColorDrawable(p.bg))
+        window.statusBarColor = p.bg
+        window.navigationBarColor = p.bg
 
-        val pad = dp(8)
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#0E1116"))
-        }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(p.bg) }
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(bars.left + pad, bars.top + pad, bars.right + pad, bars.bottom + pad)
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             insets
         }
 
-        val title = TextView(this).apply {
-            text = "WARDRIVE LITE"
-            setTextColor(Color.parseColor("#39FF88"))
-            textSize = 20f
-            typeface = Typeface.MONOSPACE
-            setTypeface(typeface, Typeface.BOLD)
-        }
-        status = TextView(this).apply {
-            setTextColor(Color.parseColor("#B8C2CC"))
-            typeface = Typeface.MONOSPACE
-            textSize = 12f
-            setPadding(0, pad / 2, 0, pad)
-        }
+        // Title bar
+        val bar = ui.hbox(14, 10)
+        title = ui.head("", 20f, p.accent)
+        bar.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        bar.addView(ui.head("WARDRIVE LITE", 12f, p.dim))
+        root.addView(bar, ui.lp(match = true))
+        root.addView(ui.divider(), ui.lp(match = true, h = ui.dp(2)))
 
-        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        startBtn = Button(this).apply { setOnClickListener { toggleScan() } }
-        val exportBtn = Button(this).apply { text = "Export CSV"; setOnClickListener { exportCsv() } }
-        val clearBtn = Button(this).apply {
-            text = "Clear"
-            setOnClickListener { Store.sightings.clear(); lastMapCount = -1; render() }
-        }
-        listOf(startBtn, exportBtn, clearBtn).forEach {
-            actions.addView(it, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        }
+        map = MapScreen(ui, this)
+        screens = listOf(HudScreen(ui, this), AlertsScreen(ui, this), DevicesScreen(ui, this), map, SettingsScreen(ui, this))
+        content = FrameLayout(this)
+        for (s in screens) content.addView(s.view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        root.addView(content, ui.lp(match = true, h = 0, weight = 1f))
 
-        val tabRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf("Alerts", "All", "Map").forEachIndexed { i, label ->
-            val b = Button(this).apply {
-                text = label
+        // Bottom navigation
+        val nav = ui.hbox(6, 6)
+        nav.background = ui.panel(cut = 14, stripes = 0)
+        tabs.forEachIndexed { i, (icon, label) ->
+            val t = ui.head("$icon\n$label", 11f, p.dim).apply {
+                gravity = Gravity.CENTER
+                setLineSpacing(ui.dpf(2), 1f)
+                setPadding(0, ui.dp(7), 0, ui.dp(7))
                 setOnClickListener { selectTab(i) }
             }
-            tabs += b
-            tabRow.addView(b, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            tabViews += t
+            nav.addView(t, ui.lp(w = 0, weight = 1f, left = 2, right = 2))
         }
-
-        alertAdapter = monoAdapter()
-        allAdapter = monoAdapter()
-        alertList = ListView(this).apply { adapter = alertAdapter; emptyView = null }
-        allList = ListView(this).apply { adapter = allAdapter }
-        map = MapView(this).apply {
-            setTileSource(TileSourceFactory.MAPNIK)
-            setMultiTouchControls(true)
-            controller.setZoom(16.0)
-        }
-
-        val content = FrameLayout(this)
-        val mp = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-        content.addView(alertList, mp)
-        content.addView(allList, mp)
-        content.addView(map, mp)
-
-        root.addView(title)
-        root.addView(status)
-        root.addView(actions)
-        root.addView(tabRow)
-        root.addView(content, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(nav, ui.lp(match = true, left = 6, right = 6, bottom = 4))
         setContentView(root)
 
-        selectTab(0)
+        selectTab(intent?.getIntExtra("tab", 0) ?: 0)
+        handleAutostart(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.hasExtra("tab")) selectTab(intent.getIntExtra("tab", 0))
+        handleAutostart(intent)
+    }
+
+    private fun handleAutostart(i: Intent?) {
+        if (i?.getBooleanExtra("autostart", false) == true) {
+            i.removeExtra("autostart")
+            if (!Store.scanning) toggleScan()
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        map.onResume()
+        map.map.onResume()
         handler.post(refresh)
     }
 
     override fun onPause() {
         super.onPause()
-        map.onPause()
+        map.map.onPause()
         handler.removeCallbacks(refresh)
     }
 
-    // ---------------- Scanning control ----------------
+    private fun selectTab(i: Int) {
+        tab = i
+        val p = ui.p
+        screens.forEachIndexed { idx, s -> s.view.visibility = if (idx == i) View.VISIBLE else View.GONE }
+        tabViews.forEachIndexed { idx, t ->
+            val sel = idx == i
+            t.setTextColor(if (sel) p.bg else p.dim)
+            t.background = if (sel) ui.panel(stroke = p.accent2, fill = p.accent, cut = 8, strokeW = 1) else null
+        }
+        title.text = when (i) { 0 -> "// COMMAND HUD"; 1 -> "// THREATS"; 2 -> "// DEVICES"; 3 -> "// MAP"; else -> "// SETUP" }
+        screens[i].onShow()
+    }
+
+    // ---------------- Actions ----------------
 
     private fun hasLocation() =
         ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
-    private fun toggleScan() {
+    override fun toggleScan() {
         if (Store.scanning) {
             startService(Intent(this, ScanService::class.java).setAction(ScanService.ACTION_STOP))
-            handler.postDelayed({ render() }, 300)
+            handler.postDelayed({ screens[tab].render() }, 300)
             return
         }
-        val needed = mutableListOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-        )
+        val needed = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
         if (Build.VERSION.SDK_INT >= 31) {
             needed += Manifest.permission.BLUETOOTH_SCAN
             needed += Manifest.permission.BLUETOOTH_CONNECT
         }
         if (Build.VERSION.SDK_INT >= 33) needed += Manifest.permission.POST_NOTIFICATIONS
-        val missing = needed.filter {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-        }
+        val missing = needed.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
         if (missing.isEmpty()) startScan() else permLauncher.launch(missing.toTypedArray())
     }
 
     private fun startScan() {
         ContextCompat.startForegroundService(this, Intent(this, ScanService::class.java))
-        handler.postDelayed({ render() }, 500)
+        handler.postDelayed({ screens[tab].render() }, 500)
     }
 
-    private fun exportCsv() {
+    override fun applyTheme() = recreate()
+
+    override fun share(file: File) {
         Store.flush()
-        val file = Store.currentFile?.takeIf { it.exists() }
-            ?: Store.logDir(this).listFiles { f -> f.name.endsWith(".csv") }?.maxByOrNull { it.lastModified() }
-        if (file == null) {
-            Toast.makeText(this, "No log yet: start a scan first", Toast.LENGTH_SHORT).show()
-            return
-        }
         val uri = FileProvider.getUriForFile(this, "$packageName.files", file)
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "text/csv"
@@ -194,111 +184,55 @@ class MainActivity : AppCompatActivity() {
         startActivity(Intent.createChooser(send, "Share WiGLE CSV"))
     }
 
-    // ---------------- UI ----------------
-
-    private fun selectTab(i: Int) {
-        tab = i
-        alertList.visibility = if (i == 0) View.VISIBLE else View.GONE
-        allList.visibility = if (i == 1) View.VISIBLE else View.GONE
-        map.visibility = if (i == 2) View.VISIBLE else View.GONE
-        tabs.forEachIndexed { idx, b -> b.alpha = if (idx == i) 1f else 0.5f }
-        lastMapCount = -1
-        render()
+    override fun showOnMap(s: Sighting) {
+        selectTab(3)
+        map.focus(s)
     }
 
-    private fun render() {
-        startBtn.text = if (Store.scanning) "■ Stop" else "▶ Start"
-        val all = Store.sightings.values.toList()
-        val w = all.count { it.kind == Kind.WIFI }
-        val b = all.count { it.kind == Kind.BLE }
-        val c = all.count { it.kind == Kind.CELL }
-        val alerts = all.filter { it.alert != null }
-        val gps = if (Store.hasFix) "%.5f, %.5f ±%dm".format(Store.lat, Store.lon, Store.acc.toInt()) else "waiting for GPS…"
-        status.text = "WiFi $w   BLE $b   Cell $c   Alerts ${alerts.size}\n$gps"
-
-        val now = System.currentTimeMillis()
-        when (tab) {
-            0 -> {
-                val rows = alerts
-                    .sortedWith(compareByDescending<Sighting> { it.alert!!.severity }.thenByDescending { it.lastSeen })
-                    .map { s ->
-                        val a = s.alert!!
-                        val mark = when (a.severity) { 3 -> "‼"; 2 -> "!"; else -> "·" }
-                        "$mark ${a.label}\n   ${s.name.ifEmpty { "(no name)" }}  ${s.key}\n   ${s.rssi} dBm · seen ${ago(now - s.lastSeen)} ago"
-                    }
-                alertAdapter.clear()
-                alertAdapter.addAll(if (rows.isEmpty()) listOf("No detections yet.") else rows)
-            }
-            1 -> {
-                val rows = all.sortedByDescending { it.rssi }.take(400).map { s ->
-                    val tag = when (s.kind) { Kind.WIFI -> "WIFI"; Kind.BLE -> "BLE "; Kind.CELL -> s.type.padEnd(4) }
-                    val ch = if (s.channel != 0) " ch${s.channel}" else ""
-                    "[$tag] ${s.name.ifEmpty { "(hidden)" }}\n       ${s.key}  ${s.rssi}dBm$ch${if (s.alert != null) "  ⚠" else ""}"
-                }
-                allAdapter.clear()
-                allAdapter.addAll(rows)
-            }
-            2 -> renderMap(all)
-        }
+    override fun openDetail(s: Sighting) {
+        val d = Dialog(this)
+        d.window?.setBackgroundDrawable(ColorDrawable(0))
+        d.setContentView(detailView(ui, s, onMap = { d.dismiss(); showOnMap(s) }, onClose = { d.dismiss() }))
+        d.window?.setLayout((resources.displayMetrics.widthPixels * 0.92f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+        d.show()
     }
+}
 
-    private fun renderMap(all: List<Sighting>) {
-        if (Store.hasFix && !mapCentered) {
-            map.controller.setCenter(GeoPoint(Store.lat, Store.lon))
-            mapCentered = true
-        }
-        val located = all.filter { it.lat != 0.0 }
-        if (located.size == lastMapCount) return
-        lastMapCount = located.size
-        map.overlays.clear()
-        // Alerts always; plus the strongest 300 other devices to keep the map fast.
-        val shown = located.filter { it.alert != null } +
-            located.filter { it.alert == null }.sortedByDescending { it.bestRssi }.take(300)
-        for (s in shown) {
-            val m = Marker(map)
-            m.position = GeoPoint(s.lat, s.lon)
-            m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-            m.title = (s.alert?.label?.let { "⚠ $it\n" } ?: "") + "${s.type}: ${s.name.ifEmpty { s.key }}"
-            m.snippet = "${s.key}  best ${s.bestRssi} dBm"
-            map.overlays.add(m)
-        }
-        if (Store.hasFix) {
-            val me = Marker(map)
-            me.position = GeoPoint(Store.lat, Store.lon)
-            me.title = "You"
-            me.icon = ContextCompat.getDrawable(this, android.R.drawable.ic_menu_mylocation)
-            map.overlays.add(me)
-        }
-        map.invalidate()
+/** Device detail card used in the popup. */
+fun detailView(ui: Ui, s: Sighting, onMap: () -> Unit, onClose: () -> Unit): View {
+    val p = ui.p
+    val fmt = SimpleDateFormat("HH:mm:ss", Locale.US)
+    val a = s.alert
+    val col = ui.vbox(18, 16)
+    col.background = ui.panel(stroke = if (a != null) ui.sevColor(a.severity) else p.frame, cut = 16, stripes = 4, strokeW = 2)
+    col.addView(ui.head(a?.label ?: s.name.ifEmpty { "(no name)" }, 20f, if (a != null) ui.sevColor(a.severity) else p.accent))
+    if (a != null) {
+        val sev = when (a.severity) { 3 -> "HIGH"; 2 -> "MEDIUM"; else -> "LOW" }
+        col.addView(ui.mono("${a.cat.label.uppercase(Locale.US)} · $sev CONFIDENCE", 12f, p.dim), ui.lp(top = 4))
+        if (a.why.isNotEmpty()) col.addView(ui.text("Why: ${a.why}", 13f, p.text), ui.lp(top = 6))
     }
-
-    private fun monoAdapter() = object : ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, mutableListOf()) {
-        override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
-            val v = super.getView(position, convertView, parent) as TextView
-            v.typeface = Typeface.MONOSPACE
-            v.textSize = 12f
-            v.gravity = Gravity.START
-            val item = getItem(position) ?: ""
-            v.setTextColor(
-                when {
-                    item.startsWith("‼") -> Color.parseColor("#FF5A5A")
-                    item.startsWith("!") -> Color.parseColor("#FFB347")
-                    item.contains("⚠") -> Color.parseColor("#FFB347")
-                    else -> Color.parseColor("#D7DEE5")
-                }
-            )
-            return v
-        }
+    if (s.following) col.addView(ui.head("⚠ This tracker has stayed with you for 10+ min and 500+ m.", 14f, p.danger), ui.lp(top = 8))
+    col.addView(ui.divider(), ui.lp(match = true, h = ui.dp(1), top = 12, bottom = 10))
+    val rows = mutableListOf(
+        "NAME" to s.name.ifEmpty { "—" },
+        if (s.kind == Kind.CELL) "CELL ID" to s.key else "MAC" to s.key,
+        "TYPE" to s.type,
+        "SIGNAL" to "${s.rssi} dBm now · best ${s.bestRssi} dBm",
+        "SEEN" to "${fmt.format(Date(s.firstSeen))} → ${fmt.format(Date(s.lastSeen))} · ${s.hits}×",
+    )
+    if (s.channel != 0) rows += "CHANNEL" to "${s.channel}" + if (s.freq != 0) " · ${s.freq} MHz" else ""
+    if (s.auth.isNotEmpty()) rows += "SECURITY" to s.auth
+    if (s.mfgrId.isNotEmpty()) rows += "MFG ID" to "0x%04X".format(s.mfgrId.toIntOrNull() ?: 0)
+    rows += "LOCATION" to if (s.lat != 0.0) "%.5f, %.5f".format(Locale.US, s.lat, s.lon) else "no GPS fix yet"
+    for ((k, v) in rows) {
+        val r = ui.hbox(0, 3)
+        r.addView(ui.head(k, 11f, p.accent2), ui.lp(w = ui.dp(84)))
+        r.addView(ui.mono(v, 13f, p.text), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        col.addView(r)
     }
-
-    private fun ago(ms: Long): String {
-        val s = ms / 1000
-        return when {
-            s < 60 -> "${s}s"
-            s < 3600 -> "${s / 60}m"
-            else -> "${s / 3600}h"
-        }
-    }
-
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    val btns = ui.hbox()
+    btns.addView(ui.button("⌖ Show on map") { onMap() }, ui.lp(w = 0, weight = 1f, right = 6))
+    btns.addView(ui.button("Close") { onClose() }, ui.lp(w = 0, weight = 1f))
+    col.addView(btns, ui.lp(match = true, top = 14))
+    return ScrollView(ui.ctx).apply { addView(col) }
 }
